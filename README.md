@@ -138,6 +138,9 @@ npm install
 
 # 4) Rodar em desenvolvimento
 npx expo start
+
+# 5) Instalar Modulo Web
+npx expo install react-dom react-native-web @expo/metro-runtime
 ```
 
 - Abra no celular (Expo Go) lendo o QR Code ou use simulador Android/iOS.
