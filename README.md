@@ -1,242 +1,162 @@
-# App React Native — Cadastro de Equipamentos (GET/POST + Lista)
+# App React Native — **Chat entre Pessoas** (usando `/equipamentos`)
 
-> Projeto educacional para a disciplina de **Sistemas de Informação**. Um app simples em **React Native** (recomendado com **Expo**) que consome uma **API REST** para **listar** e **cadastrar** equipamentos.
+Projeto educacional que transforma a API de **Cadastro de Equipamentos** em um **chat simples** entre duas pessoas — **sem alterar a API**.  
+As mensagens são persistidas em `/equipamentos` usando o campo `nome` para armazenar, como **string**, um JSON com `{ from, to, text, createdAt }`. O campo `disponivel` é mantido para respeitar o schema.
 
-<p align="center">
-  <strong>Aprenda na prática:</strong> Estado (<code>useState</code>) • Efeitos (<code>useEffect</code>) • Funções memorizadas (<code>useCallback</code>) • HTTP (GET/POST) • JSON • UX básica
-</p>
-
----
-
-## 📚 Sumário
-- [Objetivo](#-objetivo)
-- [Como funciona](#-como-funciona)
-- [Endpoint e payload](#-endpoint-e-payload)
-- [Conceitos teóricos essenciais](#-conceitos-teóricos-essenciais)
-- [Fluxo do código (passo a passo)](#-fluxo-do-código-passo-a-passo)
-- [Interface (componentes usados)](#-interface-componentes-usados)
-- [Validações do formulário](#-validações-do-formulário)
-- [Como rodar com Expo](#-como-rodar-com-expo)
-- [Testes rápidos com curl](#-testes-rápidos-com-curl)
-- [Erros comuns e correções](#-erros-comuns-e-correções)
-- [Boas práticas aplicadas](#-boas-práticas-aplicadas)
-- [Exercícios sugeridos](#-exercícios-sugeridos)
-- [Checklist de aprendizado](#-checklist-de-aprendizado)
-- [FAQ](#-faq)
-- [Licença e créditos](#-licença-e-créditos)
+> **Por quê?** A API não pode ser modificada. Então “guardamos” cada mensagem dentro de `nome` (string) e usamos um `id` numérico de 6 dígitos para evitar `400 Bad Request`.
 
 ---
 
 ## 🎯 Objetivo
 
-Demonstrar um CRUD **parcial** (listar + criar) com **UX básica**, usando **hooks** do React e consumindo uma **API REST** com **JSON**. O código é ideal para aulas introdutórias de **desenvolvimento mobile** e **consumo de APIs**.
+Demonstrar um chat 1–1 (usuário ↔ contato) com:
+- **GET** para listar mensagens (lidas de `/equipamentos`, filtradas no app)
+- **POST** para enviar novas mensagens (gravadas como JSON dentro de `nome`)
+- **Polling** leve (atualização periódica)
+- **Atualização otimista** (mensagem aparece antes da confirmação do servidor)
+- **UX** de chat (bubbles, composer, refresh, loading)
 
 ---
 
-## 🧭 Como funciona
+## 🧭 Como funciona (fluxo)
 
-- A tela mostra um **formulário** (ID, Nome, Disponível) e o botão **Cadastrar**.
-- Ao enviar, o app faz um **POST** para a API.
-- Em seguida, realiza um **GET** para **atualizar a lista**.
-- A lista suporta **pull-to-refresh**, exibe **loading** e mensagens de **sucesso/erro**.
+1. Usuário define **seu nome** (`me`) e o **contato** (`peer`).
+2. O app faz **GET /equipamentos**, converte `nome` em JSON e **filtra** apenas as mensagens da dupla (`me` ⇄ `peer`).
+3. Ao enviar, o app faz **POST /equipamentos** com:
+   - `id`: número de 6 dígitos (p.ex. `123456`)
+   - `nome`: **string** com JSON da mensagem
+   - `disponivel`: `true` (mantido para bater com o schema)
+4. Após o POST, o app refaz o GET e atualiza a conversa.
 
-Fluxo resumido:
-```
-Usuário preenche → Validação → POST /equipamentos → Sucesso → GET /equipamentos → Lista atualizada
-```
+> Como a API não tem filtro por usuário, **todo o histórico é global** e o **filtro é feito no cliente** (por `from`/`to`).
 
 ---
 
-## 🔌 Endpoint e payload
+## 🔌 Endpoint (inalterado) & mapeamento
 
-**Endpoint (GET e POST):**
+**Endpoint único (GET e POST):**
 ```
 https://app-web-uniara-example-60f73cc06c77.herokuapp.com/equipamentos
 ```
 
-**Exemplo de corpo (POST):**
+**Mapeamento de dados (adaptação para chat):**
+
+| Campo API    | Uso no chat                                                    |
+|--------------|----------------------------------------------------------------|
+| `id`         | ID numérico da “mensagem” (6 dígitos, p.ex. 123456)            |
+| `nome`       | **String** contendo JSON: `{"from","to","text","createdAt"}`   |
+| `disponivel` | Mantido como `true` (compatibilidade com a API)                |
+
+**Exemplo de payload (POST):**
 ```json
 {
-  "id": 2,
-  "nome": "martelo",
+  "id": 123456,
+  "nome": "{\"from\":\"gabriel\",\"to\":\"alice\",\"text\":\"oi\",\"createdAt\":\"2025-08-24T17:00:00.000Z\}",
   "disponivel": true
 }
 ```
 
 ---
 
-## 🧠 Conceitos teóricos essenciais
+## 🧪 Testes rápidos com `curl`
 
-### Estado (`useState`)
-- **O que é:** “memória” do componente. Ao mudar, a UI é **re-renderizada**.
-- **No app:** `items`, `loadingList`, `refreshing`, `id`, `nome`, `disponivel`, `submitting`.
+**GET — listar tudo**
+```bash
+curl -X GET https://app-web-uniara-example-60f73cc06c77.herokuapp.com/equipamentos
+```
 
-### Efeitos (`useEffect`)
-- **O que é:** código que roda **após** a renderização inicial ou quando dependências mudam.
-- **No app:** `useEffect` chama `fetchAll()` na montagem para realizar o **GET** inicial.
+**POST — enviar mensagem (note o `nome` com JSON escapado)**
+```bash
+curl -X POST https://app-web-uniara-example-60f73cc06c77.herokuapp.com/equipamentos   -H "Content-Type: application/json"   -d '{"id":123456,"nome":"{\"from\":\"gabriel\",\"to\":\"alice\",\"text\":\"oi\",\"createdAt\":\"2025-08-24T17:00:00.000Z\"}","disponivel":true}'
+```
 
-### Funções memorizadas (`useCallback`)
-- **O que é:** mantém a **mesma referência** de função entre renderizações (evita recriações desnecessárias).
-- **No app:** `fetchAll` e `onRefresh` são criadas com `useCallback`.
-
-### HTTP (GET/POST) e códigos de status
-- **GET:** buscar dados. **POST:** criar recurso no servidor.
-- **2xx:** sucesso • **4xx:** erro do cliente • **5xx:** erro do servidor.
-
-### JSON
-- Formato leve de troca de dados entre cliente e servidor.
-- **No app:** `JSON.stringify(payload)` (enviar) e `res.json()` (ler resposta).
+Após o POST, o app chama `fetchAll()` e a conversa é atualizada.
 
 ---
 
-## 🗺️ Fluxo do código (passo a passo)
+## 🖥️ Interface & UX
 
-1. **Montagem**: `useEffect` → `fetchAll()` → **GET** → resultado em `items`.
-2. **Formulário**: usuário altera `id`, `nome`, `disponivel`.
-3. **Cadastrar**: `handleSubmit()` valida, faz **POST**, chama `fetchAll()`, limpa o formulário e mostra sucesso.
-4. **Atualizar lista**: botão “Atualizar” ou **pull-to-refresh** chamam `fetchAll()`.
-
----
-
-## 🧩 Interface (componentes usados)
-
-- **`SafeAreaView`**: respeita notch e status bar.
-- **`View`, `Text`**: estrutura e textos.
-- **`TextInput`**: entradas de **ID** e **Nome**.
-- **`Switch`**: alterna o booleano **Disponível**.
-- **`TouchableOpacity`**: botão **Cadastrar**.
-- **`FlatList`**: lista performática.
-- **`RefreshControl`**: “puxe para atualizar”.
-- **`ActivityIndicator`**: indicador de carregamento.
-- **`Alert`**: mensagens simples ao usuário.
-- **`KeyboardAvoidingView`**: evita que o teclado cubra campos (iOS).
-- **`StyleSheet`**: estilos centralizados.
+- **Cabeçalho**: campos “Seu nome” e “Contato”.
+- **Lista**: bolhas (bubbles) alinhadas à direita/esquerda (quem enviou).
+- **Composer**: campo de texto + botão **Enviar**.
+- **Pull-to-refresh** e **loading**.
+- **Polling** (~3,5s) para trazer novas mensagens.
+- **Atualização otimista** ao enviar (feedback instantâneo).
 
 ---
 
-## ✅ Validações do formulário
+## 🧩 Conceitos técnicos no código
 
-1. **ID** deve ser **numérico** (`isNaN(Number(id))` → inválido).  
-2. **Nome** não pode ser vazio (`!nome.trim()` → inválido).  
-3. **Disponível** é booleano (controlado pelo `Switch`).  
-4. Em qualquer falha → `Alert.alert("Validação", "...")`.
+- **Hooks**: `useState`, `useEffect`, `useCallback`, `useMemo`.
+- **HTTP**: `fetch` com `GET`/`POST` e `Content-Type: application/json`.
+- **Serialização**: `JSON.stringify` para gravar o JSON dentro de `nome`.
+- **Ordenação**: por `createdAt` e desempate por `id`.
+- **Filtro**: cliente filtra por `from/to` da dupla ativa.
 
 ---
 
 ## ▶️ Como rodar com Expo
 
-**Pré-requisitos:** Node.js LTS; app **Expo Go** no celular.
+Pré-requisitos: Node.js LTS e **Expo Go** no celular.
 
 ```bash
-# 1) Criar um projeto (se ainda não existir)
-npx create-expo-app cadastro-equipamentos
+# 1) Criar projeto (se necessário)
+npx create-expo-app rn-chat-equipamentos
 
 # 2) Substituir o App.js pelo código deste repositório
 
 # 3) Instalar dependências (se necessário)
 npm install
 
-# 4) Rodar em desenvolvimento
+# 4) Rodar
 npx expo start
 
-# 5) Instalar Modulo Web
+# (opcional Web)
 npx expo install react-dom react-native-web @expo/metro-runtime
 ```
 
-- Abra no celular (Expo Go) lendo o QR Code ou use simulador Android/iOS.
-
-> Se optar por React Native CLI, siga a documentação oficial para configurar Android/iOS.
+Abra no celular (Expo Go) via QR Code, ou use emulador Android/iOS.
 
 ---
 
-## 🧪 Testes rápidos com curl
+## 🐞 Erros comuns & correções
 
-**GET — listar:**
-```bash
-curl -X GET https://app-web-uniara-example-60f73cc06c77.herokuapp.com/equipamentos
-```
+1) **400 Bad Request (POST)**  
+   Use **ID pequeno (6 dígitos)**. `Date.now()` (13 dígitos) pode estourar `INT32`.
 
-**POST — cadastrar:**
-```bash
-curl -X POST https://app-web-uniara-example-60f73cc06c77.herokuapp.com/equipamentos \
-  -H "Content-Type: application/json" \
-  -d '{"id": 2, "nome": "martelo", "disponivel": true}'
-```
+2) **Network request failed**  
+   - Teste a URL no **mesmo dispositivo** que roda o app.  
+   - Em Android emulador local, use `http://10.0.2.2:<porta>` (não `localhost`).  
+   - Prefira **HTTPS válido** (a API do projeto já é HTTPS).
 
-> Após o POST, o app chama `fetchAll()` e a lista é atualizada automaticamente.
+3) **`nome` não é JSON**  
+   Registros antigos de equipamentos podem existir. O app **ignora** entradas cujo `nome` não seja JSON de mensagem.
 
----
-
-## 🐞 Erros comuns e correções
-
-### 1) Template literals nas mensagens de erro
-Use **crases** (`` ` ``) para interpolar variáveis em strings:
-
-```diff
-- throw new Error(GET falhou: ${res.status});
-+ throw new Error(`GET falhou: ${res.status}`);
-
-- throw new Error(POST falhou: ${res.status} ${errText});
-+ throw new Error(`POST falhou: ${res.status} ${errText}`);
-```
-
-### 2) Lista não atualiza
-- Verifique o endpoint e a conectividade.
-- Teste o **GET** via curl/Postman.
-- Confirme `setItems(Array.isArray(data) ? data : [])`.
-
-### 3) CORS no Web
-- Prefira testar no **device** com **Expo Go** ou ajuste CORS no servidor.
-
-### 4) Teclado cobrindo campos (iOS)
-- `KeyboardAvoidingView` com `behavior="padding"` ajuda.
+4) **Ordem incorreta**  
+   Garanta que `createdAt` está em **ISO** (`new Date().toISOString()`).
 
 ---
 
 ## 🧭 Boas práticas aplicadas
 
-- `useCallback` em `fetchAll` e `onRefresh` para referência estável.
-- `try/catch/finally` para ligar/desligar **loading** e tratar erros com clareza.
-- **Feedbacks amigáveis** (`Alert`) e UI consistente (cards, badges, botões).
+- `useCallback`/`useMemo` para estabilidade e performance.
+- Tratamento de erros com `try/catch/finally` + feedback ao usuário.
+- **Polling** controlado e **atualização otimista**.
+- Filtro no cliente sem exigir mudanças na API.
 
 ---
 
-## 🧑‍🏫 Exercícios sugeridos
+## 🗺️ Roadmap (ideias)
 
-1. **PUT (editar)** um equipamento existente.  
-2. **DELETE (remover)** um equipamento.  
-3. **Busca e ordenação** por `nome`.  
-4. **Validação de ID duplicado** antes do POST.  
-5. Trocar `Alert` por **Toast/Snackbar**.  
-6. **Paginação**/infinite scroll na `FlatList`.  
-7. **Modal** para confirmar exclusão.
-
-> Se a API não suportar PUT/DELETE, crie uma API mock com **json-server** localmente.
+- Auto-scroll para a última mensagem.  
+- Inverter a FlatList (mais recentes no fim).  
+- Indicação de “enviando/entregue”.  
+- Avatares iniciais (letra do nome).  
+- Migrar para uma API real de mensagens quando possível.
 
 ---
 
-## ☑️ Checklist de aprendizado
-
-- [ ] Entendi **estado** e **re-renderização**.  
-- [ ] Sei quando usar **useEffect** e **useCallback**.  
-- [ ] Diferencio **GET** e **POST**.  
-- [ ] Sei montar e consumir **JSON**.  
-- [ ] Valido inputs e mostro **erros**.  
-- [ ] Ligo/desligo **loading** corretamente.  
-- [ ] Rodei o projeto com **Expo**.
-
----
-
-## ❓ FAQ
-
-**Funciona offline?** Não. Depende da API remota.  
-**Posso trocar a API?** Sim. Ajuste `API_URL` e mantenha o mesmo formato JSON.  
-**Por que usar `useCallback`?** Para manter a função estável e evitar efeitos colaterais em `useEffect`.  
-**Posso usar TypeScript?** Sim. Ajuda a prevenir erros de tipo.
-
----
-
-## 📄 Licença e créditos
+## 📄 Licença & créditos
 
 Uso livre para fins educacionais.  
-Material preparado para turmas de **Sistemas de Informação**, praticando **APIs REST** em apps móveis com **React Native**.
+Projeto preparado para aulas de **Sistemas de Informação**, praticando consumo de **APIs REST** em apps móveis com **React Native/Expo**, mesmo quando a API não foi desenhada para o caso de uso final.
